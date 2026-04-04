@@ -4,27 +4,68 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/prisma";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
+// Primary + fallback models
+const PRIMARY_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-2.0-flash";
+
+// Helper to get model
+const getModel = (modelName) =>
+  genAI.getGenerativeModel({ model: modelName });
+
+// Helper for safe AI call with fallback
+async function generateWithFallback(prompt) {
+  try {
+    const model = getModel(PRIMARY_MODEL);
+    return await model.generateContent(prompt);
+  } catch (err) {
+    console.warn("Primary model failed, switching to fallback...", err);
+    const fallbackModel = getModel(FALLBACK_MODEL);
+    return await fallbackModel.generateContent(prompt);
+  }
+}
+
+// Safe JSON parser
+function safeJSONParse(text) {
+  try {
+    const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
+    return JSON.parse(cleanedText);
+  } catch (err) {
+    console.error("JSON Parse Error. Raw response:", text);
+    throw new Error("Invalid AI response format");
+  }
+}
+
+// ========================
+// Generate Quiz
+// ========================
 export async function generateQuiz() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   const user = await db.user.findUnique({
     where: { clerkUserId: userId },
-  });  
+  });
 
   if (!user) throw new Error("User not found");
 
   const prompt = `
 Generate 10 technical interview questions for a ${user.industry} professional${
-    user.skills?.length ? ` with expertise in ${user.skills.join(", ")}` : ""
+    user.skills?.length
+      ? ` with expertise in ${user.skills.join(", ")}`
+      : ""
   }.
 
-Each question should be multiple choice with 4 options.
+Each question must be multiple choice with exactly 4 options.
 
-Return the response in this JSON format only, no additional text:
+IMPORTANT:
+- Return ONLY valid JSON
+- Do NOT include markdown or backticks
+- Ensure correctAnswer exactly matches one option
+
+Format:
 {
   "questions": [
     {
@@ -37,12 +78,11 @@ Return the response in this JSON format only, no additional text:
 }
 `;
 
-try {
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
-    const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
-    const quiz = JSON.parse(cleanedText);
+  try {
+    const result = await generateWithFallback(prompt);
+    const text = result.response.text();
+
+    const quiz = safeJSONParse(text);
 
     return quiz.questions;
   } catch (error) {
@@ -51,7 +91,9 @@ try {
   }
 }
 
-
+// ========================
+// Save Quiz Result
+// ========================
 export async function saveQuizResult(questions, answers, score) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -70,38 +112,35 @@ export async function saveQuizResult(questions, answers, score) {
     explanation: q.explanation,
   }));
 
-  // Get wrong answers
   const wrongAnswers = questionResults.filter((q) => !q.isCorrect);
 
-  // Only generate improvement tips if there are wrong answers
   let improvementTip = null;
+
   if (wrongAnswers.length > 0) {
     const wrongQuestionsText = wrongAnswers
       .map(
         (q) =>
-          `Question: "${q.question}"\nCorrect Answer: "${q.answer}"\nUser Answer: "${q.userAnswer}"`
+          `Question: "${q.question}"
+Correct Answer: "${q.answer}"
+User Answer: "${q.userAnswer}"`
       )
       .join("\n\n");
 
     const improvementPrompt = `
-      The user got the following ${user.industry} technical interview questions wrong:
+The user got the following ${user.industry} technical interview questions wrong:
 
-      ${wrongQuestionsText}
+${wrongQuestionsText}
 
-      Based on these mistakes, provide a concise, specific improvement tip.
-      Focus on the knowledge gaps revealed by these wrong answers.
-      Keep the response under 2 sentences and make it encouraging.
-      Don't explicitly mention the mistakes, instead focus on what to learn/practice.
-    `;
+Provide a concise improvement tip (max 2 sentences).
+Focus on what to learn next. Be encouraging.
+Do NOT mention mistakes explicitly.
+`;
 
     try {
-      const tipResult = await model.generateContent(improvementPrompt);
-
-      improvementTip = tipResult.response.text().trim();
-      console.log(improvementTip);
+      const result = await generateWithFallback(improvementPrompt);
+      improvementTip = result.response.text().trim();
     } catch (error) {
       console.error("Error generating improvement tip:", error);
-      // Continue without improvement tip if generation fails
     }
   }
 
@@ -123,7 +162,9 @@ export async function saveQuizResult(questions, answers, score) {
   }
 }
 
-
+// ========================
+// Get Assessments
+// ========================
 export async function getAssessments() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -136,12 +177,8 @@ export async function getAssessments() {
 
   try {
     const assessments = await db.assessment.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
     });
 
     return assessments;

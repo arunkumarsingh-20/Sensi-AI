@@ -1,73 +1,112 @@
-import { z } from "zod"
+import { z } from "zod";
+
+const splitSkills = (value) =>
+  String(value ?? "")
+    .split(",")
+    .map((skill) => skill.trim())
+    .filter(Boolean);
+
+const optionalTrimmedString = z
+  .string()
+  .transform((value) => value.trim())
+  .optional();
+
+const urlOrEmpty = z
+  .string()
+  .trim()
+  .optional()
+  .refine((value) => !value || /^https?:\/\/.+/i.test(value), {
+    message: "Please enter a valid URL",
+  });
+
 export const onboardingSchema = z.object({
-  industry: z.string({
-    required_error: "Please select an industry",
-  }),
-  subIndustry: z.string({
-    required_error: "Please select a specialization",
-  }),
-  bio: z.string().max(500).optional(),
-  experience: z
+  industry: z
+    .string({
+      required_error: "Please select an industry",
+    })
+    .trim()
+    .min(1, "Please select an industry"),
+  subIndustry: z
+    .string({
+      required_error: "Please select a specialization",
+    })
+    .trim()
+    .min(1, "Please select a specialization"),
+  bio: z
     .string()
-    .transform((val) => parseInt(val, 10))
-    .pipe(
-      z
-        .number()
-        .min(0, "Experience must be at least 0 years")
-        .max(50, "Experience cannot exceed 50 years")
-    ),
-  skills: z.string().transform((val) =>
-    val
-      ? val
-          .split(",")
-          .map((skill) => skill.trim())
-          .filter(Boolean)
-      : undefined
-  ),
+    .trim()
+    .max(500, "Bio cannot exceed 500 characters")
+    .optional()
+    .or(z.literal("")),
+  experience: z.coerce
+    .number()
+    .int("Experience must be a whole number")
+    .min(0, "Experience must be at least 0 years")
+    .max(50, "Experience cannot exceed 50 years"),
+  skills: z
+    .string({
+      required_error: "Please add at least one skill",
+    })
+    .trim()
+    .min(1, "Please add at least one skill")
+    .transform(splitSkills)
+    .refine((skills) => skills.length > 0, {
+      message: "Please add at least one skill",
+    }),
 });
 
-
 export const contactSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  mobile: z.string().optional(),
-  linkedin: z.string().optional(),
-  twitter: z.string().optional(),
+  email: z.string().trim().email("Invalid email address"),
+  mobile: optionalTrimmedString,
+  linkedin: urlOrEmpty,
+  twitter: urlOrEmpty,
 });
 
 export const entrySchema = z
   .object({
-    title: z.string().min(1, "Title is required"),
-    organization: z.string().min(1, "Organization is required"),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().optional(),
-    description: z.string().min(1, "Description is required"),
+    title: z.string().trim().min(1, "Title is required"),
+    organization: z.string().trim().min(1, "Organization is required"),
+    startDate: z.string().trim().min(1, "Start date is required"),
+    endDate: z.string().trim().optional(),
+    description: z.string().trim().min(1, "Description is required"),
     current: z.boolean().default(false),
   })
-  .refine(
-    (data) => {
-      if (!data.current && !data.endDate) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "End date is required unless this is your current position",
-      path: ["endDate"],
-    }
-  );
+  .refine((data) => data.current || Boolean(data.endDate?.trim()), {
+    message: "End date is required unless this is your current position",
+    path: ["endDate"],
+  });
 
-  export const resumeSchema = z.object({
+export const resumeSchema = z.object({
   contactInfo: contactSchema,
-  summary: z.string().min(1, "Professional summary is required"),
-  skills: z.string().min(1, "Skills are required"),
-  experience: z.array(entrySchema),
-  education: z.array(entrySchema),
-  projects: z.array(entrySchema),
+  summary: z
+    .string()
+    .trim()
+    .min(1, "Professional summary is required")
+    .max(1000, "Summary is too long"),
+  skills: z
+    .string()
+    .trim()
+    .min(1, "Skills are required")
+    .max(2000, "Skills field is too long"),
+  experience: z.array(entrySchema).default([]),
+  education: z.array(entrySchema).default([]),
+  projects: z.array(entrySchema).default([]),
 });
 
-
 export const coverLetterSchema = z.object({
-  companyName: z.string().min(1, "Company name is required"),
-  jobTitle: z.string().min(1, "Job title is required"),
-  jobDescription: z.string().min(1, "Job description is required"),
+  companyName: z
+    .string()
+    .trim()
+    .min(1, "Company name is required")
+    .max(120, "Company name is too long"),
+  jobTitle: z
+    .string()
+    .trim()
+    .min(1, "Job title is required")
+    .max(120, "Job title is too long"),
+  jobDescription: z
+    .string()
+    .trim()
+    .min(1, "Job description is required")
+    .max(8000, "Job description is too long"),
 });

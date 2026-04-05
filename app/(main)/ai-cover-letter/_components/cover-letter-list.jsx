@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
-import { Edit2, Eye, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { format, isValid } from "date-fns";
+import { Eye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -25,7 +26,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { deleteCoverLetter } from "@/actions/cover-letter";
 
-export default function CoverLetterList({ coverLetters }) {
+const formatCreatedDate = (value) => {
+  const date = new Date(value);
+  return isValid(date) ? format(date, "PPP") : "Unknown date";
+};
+
+export default function CoverLetterList({ coverLetters = [] }) {
   const router = useRouter();
 
   const handleDelete = async (id) => {
@@ -34,11 +40,11 @@ export default function CoverLetterList({ coverLetters }) {
       toast.success("Cover letter deleted successfully!");
       router.refresh();
     } catch (error) {
-      toast.error(error.message || "Failed to delete cover letter");
+      toast.error(error?.message || "Failed to delete cover letter");
     }
   };
 
-  if (!coverLetters?.length) {
+  if (!coverLetters.length) {
     return (
       <Card>
         <CardHeader>
@@ -54,41 +60,46 @@ export default function CoverLetterList({ coverLetters }) {
   return (
     <div className="space-y-4">
       {coverLetters.map((letter) => (
-        <Card key={letter.id} className="group relative ">
+        <Card key={letter.id} className="group relative">
           <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <CardTitle className="text-xl gradient-title">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <CardTitle className="gradient-title truncate text-xl">
                   {letter.jobTitle} at {letter.companyName}
                 </CardTitle>
                 <CardDescription>
-                  Created {format(new Date(letter.createdAt), "PPP")}
+                  Created {formatCreatedDate(letter.createdAt)}
                 </CardDescription>
               </div>
-              <div className="flex space-x-2">
-                <AlertDialog>
-                  <Button 
-                    className="cursor-pointer"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => router.push(`/ai-cover-letter/${letter.id}`)}
-                  >
+
+              <div className="flex shrink-0 items-center gap-2">
+                <Button asChild variant="outline" size="icon" className="cursor-pointer">
+                  <Link href={`/ai-cover-letter/${letter.id}`} aria-label="View cover letter">
                     <Eye className="h-4 w-4" />
-                  </Button>
+                  </Link>
+                </Button>
+
+                <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button className="cursor-pointer" variant="outline" size="icon">
+                    <Button
+                      className="cursor-pointer"
+                      variant="outline"
+                      size="icon"
+                      aria-label="Delete cover letter"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </AlertDialogTrigger>
+
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete Cover Letter?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This action cannot be undone. This will permanently
-                        delete your cover letter for {letter.jobTitle} at{" "}
-                        {letter.companyName}.
+                        This action cannot be undone. This will permanently delete your
+                        cover letter for {letter.jobTitle} at {letter.companyName}.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
+
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
@@ -103,9 +114,10 @@ export default function CoverLetterList({ coverLetters }) {
               </div>
             </div>
           </CardHeader>
+
           <CardContent>
-            <div className="text-muted-foreground text-sm line-clamp-3">
-              {letter.jobDescription}
+            <div className="line-clamp-3 text-sm text-muted-foreground">
+              {letter.jobDescription || "No job description provided."}
             </div>
           </CardContent>
         </Card>

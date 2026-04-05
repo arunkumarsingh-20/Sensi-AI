@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { getCoverLetter } from "@/actions/cover-letter";
 import CoverLetterPreview from "../_components/cover-letter-preview";
 
 export default async function EditCoverLetterPage({ params }) {
-  const { id } = await params;
+  const { id } = params;
   const coverLetter = await getCoverLetter(id);
+
+  if (!coverLetter) {
+    notFound();
+  }
 
   return (
     <div className="container mx-auto py-6">
@@ -18,12 +23,12 @@ export default async function EditCoverLetterPage({ params }) {
           </Button>
         </Link>
 
-        <h1 className="text-6xl font-bold gradient-title mb-6">
-          {coverLetter?.jobTitle} at {coverLetter?.companyName}
+        <h1 className="mb-6 text-6xl font-bold gradient-title">
+          {coverLetter.jobTitle} at {coverLetter.companyName}
         </h1>
       </div>
 
-      <CoverLetterPreview content={coverLetter?.content} />
+      <CoverLetterPreview content={coverLetter.content} />
     </div>
   );
 }

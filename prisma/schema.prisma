@@ -14,15 +14,18 @@ model User {
   name            String?
   imageUrl        String?
   industry        String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
   bio             String?
   experience      Int?
-  skills          String[]
+  skills          String[]         @default([])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   assessments     Assessment[]
   coverLetter     CoverLetter[]
   resume          Resume?
-  industryInsight IndustryInsight? @relation(fields: [industry], references: [industry])
+  industryInsight IndustryInsight? @relation(fields: [industry], references: [industry], onUpdate: Cascade, onDelete: SetNull)
+
+  @@index([industry])
+  @@index([createdAt])
 }
 
 model Assessment {
@@ -34,9 +37,11 @@ model Assessment {
   improvementTip String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id])
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([userId])
+  @@index([category])
+  @@index([createdAt])
 }
 
 model Resume {
@@ -47,7 +52,9 @@ model Resume {
   feedback  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([createdAt])
 }
 
 model CoverLetter {
@@ -60,9 +67,11 @@ model CoverLetter {
   status         String   @default("draft")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id])
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model IndustryInsight {
@@ -80,6 +89,7 @@ model IndustryInsight {
   users             User[]
 
   @@index([industry])
+  @@index([nextUpdate])
 }
 
 enum DemandLevel {

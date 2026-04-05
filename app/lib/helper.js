@@ -1,16 +1,38 @@
-// Helper function to convert entries to markdown
-export function entriesToMarkdown(entries, type) {
-  if (!entries?.length) return "";
+function toText(value) {
+  if (value == null) return "";
+  return String(value).trim();
+}
 
-  return (
-    `## ${type}\n\n` +
-    entries
-      .map((entry) => {
-        const dateRange = entry.current
-          ? `${entry.startDate} - Present`
-          : `${entry.startDate} - ${entry.endDate}`;
-        return `### ${entry.title} @ ${entry.organization}\n${dateRange}\n\n${entry.description}`;
-      })
-      .join("\n\n")
-  );
+function formatDateRange(entry = {}) {
+  const startDate = toText(entry.startDate) || "Start date not set";
+  const endDate = toText(entry.endDate) || "End date not set";
+
+  if (entry.current) {
+    return `${startDate} - Present`;
+  }
+
+  return `${startDate} - ${endDate}`;
+}
+
+export function entriesToMarkdown(entries, type) {
+  if (!Array.isArray(entries) || entries.length === 0) return "";
+
+  const heading = toText(type) || "Entries";
+
+  return [
+    `## ${heading}`,
+    ...entries.map((entry) => {
+      const title = toText(entry?.title) || "Untitled";
+      const organization = toText(entry?.organization) || "Unknown";
+      const description = toText(entry?.description);
+
+      return [
+        `### ${title} @ ${organization}`,
+        formatDateRange(entry),
+        description,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    }),
+  ].join("\n\n");
 }

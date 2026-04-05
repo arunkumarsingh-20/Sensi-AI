@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,8 +19,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { generateCoverLetter } from "@/actions/cover-letter";
 import useFetch from "@/hooks/use-fetch";
 import { coverLetterSchema } from "@/app/lib/schema";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+
+const fieldConfig = [
+  {
+    name: "companyName",
+    label: "Company Name",
+    placeholder: "Enter company name",
+    type: "text",
+  },
+  {
+    name: "jobTitle",
+    label: "Job Title",
+    placeholder: "Enter job title",
+    type: "text",
+  },
+];
 
 export default function CoverLetterGenerator() {
   const router = useRouter();
@@ -32,28 +46,28 @@ export default function CoverLetterGenerator() {
     reset,
   } = useForm({
     resolver: zodResolver(coverLetterSchema),
+    defaultValues: {
+      companyName: "",
+      jobTitle: "",
+      jobDescription: "",
+    },
   });
 
-  const {
-    loading: generating,
-    fn: generateLetterFn,
-    data: generatedLetter,
-  } = useFetch(generateCoverLetter);
-
-  // Update content when letter is generated
-  useEffect(() => {
-    if (generatedLetter) {
-      toast.success("Cover letter generated successfully!");
-      router.push(`/ai-cover-letter/${generatedLetter.id}`);
-      reset();
-    }
-  }, [generatedLetter]);
+  const { loading: generating, fn: generateLetterFn } = useFetch(generateCoverLetter);
 
   const onSubmit = async (data) => {
     try {
-      await generateLetterFn(data);
+      const generatedLetter = await generateLetterFn(data);
+
+      if (!generatedLetter?.id) {
+        throw new Error("Cover letter generation failed");
+      }
+
+      toast.success("Cover letter generated successfully!");
+      reset();
+      router.push(`/ai-cover-letter/${generatedLetter.id}`);
     } catch (error) {
-      toast.error(error.message || "Failed to generate cover letter");
+      toast.error(error?.message || "Failed to generate cover letter");
     }
   };
 
@@ -66,37 +80,26 @@ export default function CoverLetterGenerator() {
             Provide information about the position you're applying for
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Form fields remain the same */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="companyName">Company Name</Label>
-                <Input
-                  id="companyName"
-                  placeholder="Enter company name"
-                  {...register("companyName")}
-                />
-                {errors.companyName && (
-                  <p className="text-sm text-red-500">
-                    {errors.companyName.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="jobTitle">Job Title</Label>
-                <Input
-                  id="jobTitle"
-                  placeholder="Enter job title"
-                  {...register("jobTitle")}
-                />
-                {errors.jobTitle && (
-                  <p className="text-sm text-red-500">
-                    {errors.jobTitle.message}
-                  </p>
-                )}
-              </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {fieldConfig.map((field) => (
+                <div key={field.name} className="space-y-2">
+                  <Label htmlFor={field.name}>{field.label}</Label>
+                  <Input
+                    id={field.name}
+                    type={field.type}
+                    placeholder={field.placeholder}
+                    {...register(field.name)}
+                  />
+                  {errors[field.name] && (
+                    <p className="text-sm text-red-500">
+                      {errors[field.name]?.message}
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
 
             <div className="space-y-2">

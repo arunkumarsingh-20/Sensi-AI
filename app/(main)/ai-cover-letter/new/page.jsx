@@ -8,14 +8,14 @@ export default function NewCoverLetterPage() {
     <div className="container mx-auto py-6">
       <div className="flex flex-col space-y-2">
         <Link href="/ai-cover-letter">
-          <Button variant="link" className=" cursor-pointer gap-2 pl-0">
+          <Button variant="link" className="cursor-pointer gap-2 pl-0">
             <ArrowLeft className="h-4 w-4" />
             Back to Cover Letters
           </Button>
         </Link>
 
         <div className="pb-6">
-          <h1 className="text-6xl font-bold gradient-title">
+          <h1 className="text-4xl font-bold gradient-title md:text-6xl">
             Create Cover Letter
           </h1>
           <p className="text-muted-foreground">

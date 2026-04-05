@@ -1,28 +1,30 @@
 import { Brain, Target, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function StatsCards({ assessments }) {
-  const getAverageScore = () => {
-    if (!assessments?.length) return 0;
-    const total = assessments.reduce(
-      (sum, assessment) => sum + assessment.quizScore,
-      0
-    );
-    return (total / assessments.length).toFixed(1);
-  };
+const toNumber = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
 
-  const getLatestAssessment = () => {
-    if (!assessments?.length) return null;
-    return assessments[0];
-  };
+export default function StatsCards({ assessments = [] }) {
+  const safeAssessments = Array.isArray(assessments) ? assessments : [];
 
-  const getTotalQuestions = () => {
-    if (!assessments?.length) return 0;
-    return assessments.reduce(
-      (sum, assessment) => sum + assessment.questions.length,
-      0
-    );
-  };
+  const averageScore = safeAssessments.length
+    ? (
+        safeAssessments.reduce((sum, assessment) => sum + toNumber(assessment.quizScore), 0) /
+        safeAssessments.length
+      ).toFixed(1)
+    : "0.0";
+
+  const totalQuestions = safeAssessments.reduce((sum, assessment) => {
+    const questionsCount = Array.isArray(assessment.questions)
+      ? assessment.questions.length
+      : 0;
+    return sum + questionsCount;
+  }, 0);
+
+  const latestAssessment = safeAssessments[0];
+  const latestScore = latestAssessment ? toNumber(latestAssessment.quizScore).toFixed(1) : "0.0";
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
@@ -32,22 +34,18 @@ export default function StatsCards({ assessments }) {
           <Trophy className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{getAverageScore()}%</div>
-          <p className="text-xs text-muted-foreground">
-            Across all assessments
-          </p>
+          <div className="text-2xl font-bold">{averageScore}%</div>
+          <p className="text-xs text-muted-foreground">Across all assessments</p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">
-            Questions Practiced
-          </CardTitle>
+          <CardTitle className="text-sm font-medium">Questions Practiced</CardTitle>
           <Brain className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{getTotalQuestions()}</div>
+          <div className="text-2xl font-bold">{totalQuestions}</div>
           <p className="text-xs text-muted-foreground">Total questions</p>
         </CardContent>
       </Card>
@@ -58,9 +56,7 @@ export default function StatsCards({ assessments }) {
           <Target className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {getLatestAssessment()?.quizScore.toFixed(1) || 0}%
-          </div>
+          <div className="text-2xl font-bold">{latestScore}%</div>
           <p className="text-xs text-muted-foreground">Most recent quiz</p>
         </CardContent>
       </Card>

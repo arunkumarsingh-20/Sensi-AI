@@ -1,27 +1,24 @@
-import React from 'react'
-import { getAssessments } from '@/actions/interview';
+import { getAssessments } from "@/actions/interview";
 import StatsCards from "./_components/stats-cards";
-import PerformanceChart from './_components/performance-chart';
-
+import PerformanceChart from "./_components/performance-chart";
 import QuizList from "./_components/quiz-list";
 
-const InterviewPage =async () => {
-
+export default async function InterviewPage() {
   const assessments = await getAssessments();
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-6xl font-bold gradient-title">
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="gradient-title text-4xl font-bold md:text-6xl">
           Interview Preparation
         </h1>
       </div>
+
       <div className="space-y-6">
         <StatsCards assessments={assessments} />
         <PerformanceChart assessments={assessments} />
         <QuizList assessments={assessments} />
       </div>
     </div>
-  )
+  );
 }
-
-export default InterviewPage

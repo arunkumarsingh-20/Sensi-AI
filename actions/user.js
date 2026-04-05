@@ -1,67 +1,77 @@
-"use server"
+"use server";
 
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/prisma";
 import { generateAIInsights } from "./dashboard";
 
+function normalizePayload(data) {
+  const industry = typeof data?.industry === "string" ? data.industry.trim() : "";
+  const bio = typeof data?.bio === "string" ? data.bio.trim() : "";
+  const experience = Number.isFinite(Number(data?.experience))
+    ? Number(data.experience)
+    : null;
+
+  const skills = Array.isArray(data?.skills)
+    ? [...new Set(data.skills.map((s) => String(s).trim()).filter(Boolean))]
+    : [];
+
+  if (!industry) {
+    throw new Error("Industry is required");
+  }
+
+  if (experience === null || experience < 0 || experience > 50) {
+    throw new Error("Experience must be between 0 and 50");
+  }
+
+  return { industry, bio, experience, skills };
+}
 
 export async function updateUser(data) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await db.user.findUnique({
+  const existingUser = await db.user.findUnique({
     where: { clerkUserId: userId },
+    select: { id: true },
   });
 
-  if (!user) throw new Error("User not found");
+  if (!existingUser) throw new Error("User not found");
+
+  const payload = normalizePayload(data);
 
   try {
-    // Start a transaction to handle both operations
-    const result = await db.$transaction(
-      async (tx) => {
-        // First check if industry exists
-        let industryInsight = await tx.industryInsight.findUnique({
-          where: {
-            industry: data.industry,
-          },
-        });
+    let industryInsight = await db.industryInsight.findUnique({
+      where: { industry: payload.industry },
+    });
 
-        // If industry doesn't exist, create it with default values
-        if (!industryInsight) {
-        const insights = await generateAIInsights(data.industry);
+    if (!industryInsight) {
+      const insights = await generateAIInsights(payload.industry);
 
-        industryInsight = await tx.industryInsight.create({
-          data: {
-            industry: data.industry,
-            ...insights,
-            nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          },
-        });
-      } 
+      industryInsight = await db.industryInsight.upsert({
+        where: { industry: payload.industry },
+        update: {},
+        create: {
+          industry: payload.industry,
+          ...insights,
+          nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
 
-        // Now update the user
-        const updatedUser = await tx.user.update({
-          where: {
-            id: user.id,
-          },
-          data: {
-            industry: data.industry,
-            experience: data.experience,
-            bio: data.bio,
-            skills: data.skills,
-          },
-        });
-
-        return { updatedUser, industryInsight };
+    const updatedUser = await db.user.update({
+      where: { id: existingUser.id },
+      data: {
+        industry: payload.industry,
+        experience: payload.experience,
+        bio: payload.bio,
+        skills: payload.skills,
       },
-      {
-        timeout: 10000, // default: 5000
-      }
-    );
-    return {success:true, ...result};
+    });
+
+    return { success: true, updatedUser, industryInsight };
   } catch (error) {
-    console.error("Error updating user and industry:", error.message);
-    throw new Error("Failed to update profile"+error.message );
+    console.error("Error updating user profile:", error);
+    throw new Error("Failed to update profile");
   }
 }
 
@@ -69,27 +79,19 @@ export async function getUserOnboardingStatus() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
-
-  if (!user) throw new Error("User not found");
-
   try {
     const user = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-      },
-      select: {
-        industry: true,
-      },
+      where: { clerkUserId: userId },
+      select: { industry: true },
     });
 
+    if (!user) throw new Error("User not found");
+
     return {
-      isOnboarded: !!user.industry,
+      isOnboarded: Boolean(user.industry),
     };
   } catch (error) {
-    console.error("Error checking onboarding status:", error.message);
+    console.error("Error checking onboarding status:", error);
     throw new Error("Failed to check onboarding status");
   }
 }

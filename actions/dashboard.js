@@ -4,57 +4,99 @@ import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  throw new Error("Missing GEMINI_API_KEY");
+}
 
-// Models
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
 const PRIMARY_MODEL = "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.0-flash";
 
-// Get model
+const ENUMS = {
+  DEMAND_LEVEL: ["HIGH", "MEDIUM", "LOW"],
+  MARKET_OUTLOOK: ["POSITIVE", "NEUTRAL", "NEGATIVE"],
+};
+
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 const getModel = (modelName) =>
   genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {
       responseMimeType: "application/json",
+      temperature: 0.3,
     },
   });
 
-// Fallback wrapper
 async function generateWithFallback(prompt) {
   try {
     return await getModel(PRIMARY_MODEL).generateContent(prompt);
-  } catch (err) {
-    console.warn("Primary failed, switching to fallback...", err);
-    return await getModel(FALLBACK_MODEL).generateContent(prompt);
+  } catch (primaryError) {
+    console.warn("Primary model failed, trying fallback model...");
+    try {
+      return await getModel(FALLBACK_MODEL).generateContent(prompt);
+    } catch (fallbackError) {
+      console.error("Both primary and fallback models failed");
+      throw new Error("AI generation failed");
+    }
   }
 }
 
-// Safe JSON parser
 function safeJSONParse(text) {
   try {
-    const cleaned = text.replace(/```(?:json)?/g, "").trim();
+    const cleaned = String(text).replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
     return JSON.parse(cleaned);
-  } catch (err) {
-    console.error("JSON parse failed. Raw:", text);
+  } catch {
     throw new Error("Invalid AI JSON response");
   }
 }
 
-// ✅ ENUM NORMALIZER (CRITICAL FIX)
 function normalizeEnum(value, allowed) {
   if (!value) return allowed[0];
-
-  const upper = value.toUpperCase();
-  return allowed.includes(upper) ? upper : allowed[0];
+  const normalized = String(value).toUpperCase().trim();
+  return allowed.includes(normalized) ? normalized : allowed[0];
 }
 
-// ========================
-// Generate AI Insights
-// ========================
+function toStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((v) => String(v).trim()).filter(Boolean))];
+}
+
+function toSalaryRanges(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      role: String(item?.role ?? "").trim(),
+      min: Number(item?.min ?? 0),
+      max: Number(item?.max ?? 0),
+      median: Number(item?.median ?? 0),
+      location: String(item?.location ?? "").trim(),
+    }))
+    .filter((item) => item.role && Number.isFinite(item.min) && Number.isFinite(item.max) && Number.isFinite(item.median));
+}
+
+function normalizeInsights(insights) {
+  return {
+    salaryRanges: toSalaryRanges(insights?.salaryRanges),
+    growthRate: Number.isFinite(Number(insights?.growthRate)) ? Number(insights.growthRate) : 0,
+    demandLevel: normalizeEnum(insights?.demandLevel, ENUMS.DEMAND_LEVEL),
+    topSkills: toStringArray(insights?.topSkills),
+    marketOutlook: normalizeEnum(insights?.marketOutlook, ENUMS.MARKET_OUTLOOK),
+    keyTrends: toStringArray(insights?.keyTrends),
+    recommendedSkills: toStringArray(insights?.recommendedSkills),
+  };
+}
+
 export async function generateAIInsights(industry) {
+  const normalizedIndustry = String(industry ?? "").trim();
+  if (!normalizedIndustry) {
+    throw new Error("Industry is required");
+  }
+
   const prompt = `
-Analyze the current state of the ${industry} industry.
+Analyze the current state of the ${normalizedIndustry} industry.
 
 Return ONLY valid JSON in this exact format:
 {
@@ -78,16 +120,14 @@ IMPORTANT:
   try {
     const result = await generateWithFallback(prompt);
     const text = result.response.text();
-    return safeJSONParse(text);
+    const parsed = safeJSONParse(text);
+    return normalizeInsights(parsed);
   } catch (error) {
     console.error("Error generating AI insights:", error);
     throw new Error("Failed to generate industry insights");
   }
 }
 
-// ========================
-// Get Industry Insights
-// ========================
 export async function getIndustryInsights() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -98,51 +138,33 @@ export async function getIndustryInsights() {
   });
 
   if (!user) throw new Error("User not found");
+  if (!user.industry) throw new Error("User industry is not set");
 
-  // ========================
-  // CREATE if not exists
-  // ========================
+  const nextUpdate = new Date(Date.now() + ONE_WEEK_MS);
+
   if (!user.industryInsight) {
     const insights = await generateAIInsights(user.industry);
-
-    const normalizedInsights = {
-      ...insights,
-      demandLevel: normalizeEnum(insights.demandLevel, ["HIGH", "MEDIUM", "LOW"]),
-      marketOutlook: normalizeEnum(insights.marketOutlook, ["POSITIVE", "NEUTRAL", "NEGATIVE"]),
-    };
 
     return await db.industryInsight.create({
       data: {
         industry: user.industry,
-        ...normalizedInsights,
-        nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ...insights,
+        nextUpdate,
       },
     });
   }
 
-  // ========================
-  // UPDATE if expired
-  // ========================
   if (new Date(user.industryInsight.nextUpdate) < new Date()) {
     const insights = await generateAIInsights(user.industry);
-
-    const normalizedInsights = {
-      ...insights,
-      demandLevel: normalizeEnum(insights.demandLevel, ["HIGH", "MEDIUM", "LOW"]),
-      marketOutlook: normalizeEnum(insights.marketOutlook, ["POSITIVE", "NEUTRAL", "NEGATIVE"]),
-    };
 
     return await db.industryInsight.update({
       where: { id: user.industryInsight.id },
       data: {
-        ...normalizedInsights,
-        nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ...insights,
+        nextUpdate,
       },
     });
   }
 
-  // ========================
-  // RETURN existing
-  // ========================
   return user.industryInsight;
 }
